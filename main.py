@@ -1,73 +1,51 @@
-import os
 import discord
 from discord.ext import commands
-import re
-import aiohttp
-from collections import Counter
+from pypresence import Presence
+import asyncio
+import time
 
-TOKEN = os.environ.get("DISCORD_TOKEN")
-
-if not TOKEN:
-    raise ValueError("Missing DISCORD_TOKEN environment variable.")
+TOKEN = "MTM5NDgwODYzNDU3OTQ4ODg2OQ.GKomDy.Ty1AU3A2K_NvfDCM2c_A-Lim5ow5STeMMX7dkw"# Remplace par ton token bot Discord
+CLIENT_ID = "1394808634579488869"      # ID de ton application Discord (pour Rich Presence)
 
 intents = discord.Intents.default()
-intents.message_content = True
-intents.guilds = True
+bot = commands.Bot(command_prefix="!", intents=intents)
 
-bot = commands.Bot(command_prefix='r!', intents=intents)
+RPC = Presence(CLIENT_ID)  # Client Rich Presence
 
-invite_regex = re.compile(r'(https?:\/\/)?(www\.)?(discord\.gg|discord\.com\/invite)\/[A-Za-z0-9]+')
 
 @bot.event
 async def on_ready():
-    print(f'Logged in as {bot.user}')
+    print(f'Connecté en tant que {bot.user} !')
+
+    # Connecte le client Rich Presence
+    RPC.connect()
+
+    # Met à jour la Rich Presence
+    RPC.update(
+        details="In This Shirt",
+        state="The Irrepressibles",
+        large_image="ab67616d0000b273ad788be5a21e95bd6020ce74",
+        large_text="Écoute sur Spotify",
+        start=time.time()
+    )
+    print("Rich Presence activée.")
 
 @bot.command()
-async def scanall(ctx, message_id: int):
-    await ctx.send("Scanning messages, please wait...")
+async def ping(ctx):
+    await ctx.send("Pong !")
 
-    channel = ctx.channel
-    links_found = []
+# Pour garder le client RPC actif sans bloquer le bot
+async def keep_rpc_alive():
+    while True:
+        try:
+            RPC.update()
+        except Exception:
+            pass
+        await asyncio.sleep(15)
 
-    try:
-        ref_message = await channel.fetch_message(message_id)
-    except discord.NotFound:
-        await ctx.send("Message ID not found.")
-        return
+async def main():
+    asyncio.create_task(keep_rpc_alive())
+    await bot.start(TOKEN)
 
-    async for message in channel.history(after=ref_message, oldest_first=True, limit=None):
-        matches = invite_regex.findall(message.content)
-        for match in matches:
-            full_url = match[0] + match[1] + match[2] + "/" + message.content.split(match[2] + "/")[1].split()[0]
-            links_found.append(full_url)
-
-    if not links_found:
-        await ctx.send("No Discord invite links found.")
-        return
-
-    counts = Counter(links_found)
-    session = aiohttp.ClientSession()
-
-    results = []
-    for link, count in counts.most_common():
-        invite_code = link.split("/")[-1]
-
-        async with session.get(f"https://discord.com/api/v10/invites/{invite_code}?with_counts=true") as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                member_count = data['approximate_member_count']
-            else:
-                member_count = "Unknown"
-
-        results.append(f"**{link}** ({count} times) ({member_count} members)")
-
-    await session.close()
-
-    embed = discord.Embed(
-        title="Scan finished",
-        description="\n".join(f"#{i+1} {result}" for i, result in enumerate(results)),
-        color=discord.Color.green()
-    )
-    await ctx.send(embed=embed)
-
-bot.run(TOKEN)
+if __name__ == "__main__":
+    asyncio.run(main())
